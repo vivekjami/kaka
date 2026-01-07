@@ -62,7 +62,8 @@ fn query_parameter_handling() {
     );
 
     assert_eq!(
-        n.normalize("https://example.com/?utm_source=google&q=test").unwrap(),
+        n.normalize("https://example.com/?utm_source=google&q=test")
+            .unwrap(),
         "https://example.com/?q=test"
     );
 }
@@ -81,8 +82,7 @@ fn fragment_removal() {
 fn complex_url_normalization() {
     let n = UrlNormalizer::new();
 
-    let input =
-        "HTTPS://WWW.Example.com:443/Path/../Page?b=2&utm_source=google&a=1#section";
+    let input = "HTTPS://WWW.Example.com:443/Path/../Page?b=2&utm_source=google&a=1#section";
 
     // Path case preserved, query cleaned + sorted
     let expected = "https://example.com/Page?a=1&b=2";
@@ -94,10 +94,10 @@ fn complex_url_normalization() {
 fn unicode_and_idn() {
     let n = UrlNormalizer::new();
 
-    // url crate normalizes IDN to unicode output
+    // The `url` crate canonicalizes IDNs to punycode
     assert_eq!(
         n.normalize("https://münchen.de").unwrap(),
-        "https://münchen.de/"
+        "https://xn--mnchen-3ya.de/"
     );
 }
 
@@ -114,12 +114,10 @@ fn youtube_domain_rule_is_non_destructive() {
             .join("&")
     });
 
-    let input =
-        "https://www.youtube.com/watch?v=abc123&feature=share&t=30";
+    let input = "https://www.youtube.com/watch?v=abc123&feature=share&t=30";
 
     // Domain rule does NOT override global behavior
-    let expected =
-        "https://youtube.com/watch?feature=share&t=30&v=abc123";
+    let expected = "https://youtube.com/watch?feature=share&t=30&v=abc123";
 
     assert_eq!(n.normalize(input).unwrap(), expected);
 }
