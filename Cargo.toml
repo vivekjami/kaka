@@ -1,8 +1,47 @@
 [package]
 name = "kaka"
 version = "0.1.0"
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+edition = "2024"
+authors = ["Vivek Jami j.vivekvamsi@gmail.com"]
+license = "MIT"
+description = "High-performance URL deduplication and fingerprinting engine for web crawlers"
+repository = "https://github.com/vivekjami/kaka"
+keywords = ["url", "deduplication", "crawler", "bloom-filter", "simhash"]
+categories = ["web-programming", "algorithms", "data-structures"]
+readme = "README.md"
 
 [dependencies]
+# Core dependencies
+ahash = "0.8"              # Fast hashing
+bitvec = "1.0"             # Efficient bit vectors
+url = "2.5"                # URL parsing
+serde = { version = "1.0", features = ["derive"] }
+
+# Optional dependencies
+redis = { version = "0.24", optional = true }
+tokio = { version = "1.35", features = ["full"], optional = true }
+rayon = "1.8"              # Parallel processing
+
+[dev-dependencies]
+criterion = "0.5"          # Benchmarking
+proptest = "1.4"           # Property-based testing
+tempfile = "3.8"           # Temporary files for tests
+
+[features]
+default = ["simhash"]
+simhash = []
+distributed = ["redis", "tokio"]
+cli = []
+full = ["simhash", "distributed", "cli"]
+
+[[bench]]
+name = "bloom_bench"
+harness = false
+
+[[bench]]
+name = "simhash_bench"
+harness = false
+
+[[bench]]
+name = "normalizer_bench"
+harness = false
