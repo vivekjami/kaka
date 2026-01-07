@@ -1,22 +1,17 @@
-
-pub mod simhash;
-pub mod lshbloom;
-pub mod engine;
-///! Public library interface for Kāka.
-///!
-///! This module wires together the Bloom filter and URL normalizer
-///! into a single deduplication engine.
-
+//! Public library interface for Kāka.
+//!
+//! This module wires together the Bloom filter and URL normalizer
+//! into a single deduplication engine.
 pub mod bloom;
+pub mod engine;
+pub mod lshbloom;
 pub mod normalizer;
-
-use bloom::BloomFilter;
-use normalizer::UrlNormalizer;
+pub mod simhash;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-pub use bloom::BloomFilter as _;
-pub use normalizer::UrlNormalizer as _;
+pub use bloom::BloomFilter;
+pub use normalizer::UrlNormalizer;
 
 /// Deduplication engine combining normalization and Bloom filtering.
 pub struct DeduplicationEngine {
@@ -55,33 +50,23 @@ impl DeduplicationEngine {
     /// # Returns
     /// - `Ok(false)` → URL is new
     /// - `Ok(true)` → URL is a duplicate
-    pub fn check_and_insert(
-        &mut self,
-        url: &str,
-    ) -> Result<bool, url::ParseError> {
+    pub fn check_and_insert(&mut self, url: &str) -> Result<bool, url::ParseError> {
         self.stats.total_checked.fetch_add(1, Ordering::Relaxed);
 
         let normalized = self.normalizer.normalize(url)?;
 
         if self.bloom.contains(&normalized) {
-            self.stats
-                .duplicates_found
-                .fetch_add(1, Ordering::Relaxed);
+            self.stats.duplicates_found.fetch_add(1, Ordering::Relaxed);
             Ok(true)
         } else {
             self.bloom.insert(&normalized);
-            self.stats
-                .urls_inserted
-                .fetch_add(1, Ordering::Relaxed);
+            self.stats.urls_inserted.fetch_add(1, Ordering::Relaxed);
             Ok(false)
         }
     }
 
     /// Check whether a URL is a duplicate without inserting it.
-    pub fn is_duplicate(
-        &self,
-        url: &str,
-    ) -> Result<bool, url::ParseError> {
+    pub fn is_duplicate(&self, url: &str) -> Result<bool, url::ParseError> {
         let normalized = self.normalizer.normalize(url)?;
         Ok(self.bloom.contains(&normalized))
     }

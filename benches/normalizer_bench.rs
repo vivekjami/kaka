@@ -3,7 +3,7 @@
 //! This measures the cost of parsing + normalization, which is
 //! typically the dominant cost in crawler deduplication pipelines.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
 use kaka::normalizer::UrlNormalizer;
 
 /// Benchmark normalization of already-well-formed URLs.

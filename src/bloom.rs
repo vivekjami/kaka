@@ -1,13 +1,15 @@
 //! Bloom Filter implementation.
 //!
-//! This module provides a probabilistic data structure for set membership testing.
-//! It guarantees zero false negatives and allows a configurable false positive rate.
+//! This module provides a probabilistic data structure for fast set
+//! membership testing. It guarantees **zero false negatives** and
+//! allows a configurable false positive rate.
 //!
-//! Designed for high-throughput URL deduplication in large-scale web crawlers.
+//! Designed for high-throughput URL deduplication in large-scale
+//! web crawlers and indexing systems.
 
 use ahash::RandomState;
 use bitvec::vec::BitVec;
-use std::hash::{BuildHasher, Hash, Hasher};
+use std::hash::Hash;
 
 /// Bloom filter for approximate set membership testing.
 ///
@@ -16,7 +18,7 @@ use std::hash::{BuildHasher, Hash, Hasher};
 /// - Configurable false positive rate
 /// - Memory efficient
 ///
-/// # Parameters
+/// # Fields
 /// - `bits`: Bit vector backing the filter
 /// - `num_hashes`: Number of hash functions (k)
 /// - `hash_builder`: Fast, randomized hash builder
@@ -46,7 +48,7 @@ impl BloomFilter {
         let m = (-(capacity as f64) * fp_rate.ln() / (ln2 * ln2)).ceil() as usize;
         let k = ((m as f64 / capacity as f64) * ln2).ceil() as u32;
 
-        BloomFilter {
+        Self {
             bits: BitVec::repeat(false, m),
             num_hashes: k,
             hash_builder: RandomState::new(),
@@ -57,14 +59,14 @@ impl BloomFilter {
     /// Insert an element into the Bloom filter.
     ///
     /// Uses double hashing to simulate `k` hash functions:
-    /// position_i = (h1 + i * h2) % m
+    ///
+    /// `position_i = (h1 + i * h2) % m`
     pub fn insert(&mut self, value: &str) {
         let (h1, h2) = self.base_hashes(value);
         let m = self.bits.len() as u64;
 
         for i in 0..self.num_hashes {
-            let index =
-                (h1.wrapping_add((i as u64).wrapping_mul(h2)) % m) as usize;
+            let index = (h1.wrapping_add((i as u64).wrapping_mul(h2)) % m) as usize;
             self.bits.set(index, true);
         }
 
@@ -73,15 +75,15 @@ impl BloomFilter {
 
     /// Check whether an element is possibly in the set.
     ///
-    /// Returns `false` if the element is definitely not present.
-    /// Returns `true` if the element is possibly present.
+    /// Returns:
+    /// - `false` if the element is **definitely not present**
+    /// - `true` if the element is **possibly present**
     pub fn contains(&self, value: &str) -> bool {
         let (h1, h2) = self.base_hashes(value);
         let m = self.bits.len() as u64;
 
         for i in 0..self.num_hashes {
-            let index =
-                (h1.wrapping_add((i as u64).wrapping_mul(h2)) % m) as usize;
+            let index = (h1.wrapping_add((i as u64).wrapping_mul(h2)) % m) as usize;
             if !self.bits[index] {
                 return false;
             }
@@ -93,7 +95,7 @@ impl BloomFilter {
     /// Estimate the current false positive rate.
     ///
     /// Formula:
-    /// (1 - e^(-k * n / m))^k
+    /// `(1 - e^(-k * n / m))^k`
     pub fn false_positive_rate(&self) -> f64 {
         let k = self.num_hashes as f64;
         let n = self.items_inserted as f64;
@@ -103,15 +105,10 @@ impl BloomFilter {
     }
 
     /// Generate two base hashes for double hashing.
+    #[inline]
     fn base_hashes<T: Hash>(&self, value: T) -> (u64, u64) {
-        let mut hasher1 = self.hash_builder.build_hasher();
-        value.hash(&mut hasher1);
-        let h1 = hasher1.finish();
-
-        let mut hasher2 = self.hash_builder.build_hasher();
-        h1.hash(&mut hasher2);
-        let h2 = hasher2.finish();
-
+        let h1 = self.hash_builder.hash_one(value);
+        let h2 = self.hash_builder.hash_one(h1);
         (h1, h2)
     }
 }

@@ -82,9 +82,7 @@ fn query_parameter_handling() {
     let normalizer = UrlNormalizer::new();
 
     assert_eq!(
-        normalizer
-            .normalize("http://example.com/?b=2&a=1")
-            .unwrap(),
+        normalizer.normalize("http://example.com/?b=2&a=1").unwrap(),
         "http://example.com/?a=1&b=2"
     );
 
@@ -122,8 +120,7 @@ fn fragment_removal() {
 fn complex_url_normalization() {
     let normalizer = UrlNormalizer::new();
 
-    let input =
-        "HTTPS://WWW.Example.com:443/Path/../Page?b=2&utm_source=google&a=1#section";
+    let input = "HTTPS://WWW.Example.com:443/Path/../Page?b=2&utm_source=google&a=1#section";
     let expected = "https://example.com/page?a=1&b=2";
 
     assert_eq!(normalizer.normalize(input).unwrap(), expected);
@@ -163,8 +160,7 @@ fn youtube_domain_specific_rule() {
             .join("&")
     });
 
-    let input =
-        "https://www.youtube.com/watch?v=abc123&feature=share&t=30";
+    let input = "https://www.youtube.com/watch?v=abc123&feature=share&t=30";
     let expected = "https://youtube.com/watch?v=abc123";
 
     assert_eq!(normalizer.normalize(input).unwrap(), expected);

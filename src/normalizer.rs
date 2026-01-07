@@ -1,28 +1,17 @@
-//! URL normalization module.
+//! URL normalization logic.
 //!
-//! This module canonicalizes URLs so that semantically identical URLs
-//! map to the same string representation. Performance is critical here,
-//! as normalization typically dominates crawler deduplication pipelines.
+//! This module canonicalizes URLs to ensure semantically equivalent
+//! URLs map to the same representation before deduplication.
 
 use std::collections::{HashMap, HashSet};
 
 use url::Url;
 
-/// URL normalizer with configurable rules.
-pub struct UrlNormalizer {
-    /// Query parameters that should be removed (tracking params).
-    tracking_params: HashSet<String>,
+/// Domain-specific normalization rule.
+type DomainRule = Box<dyn Fn(&Url) -> String>;
 
-    /// Optional domain-specific normalization rules.
-    domain_rules: HashMap<String, Box<dyn Fn(&Url) -> String>>,
-
-    /// Normalization configuration flags.
-    config: NormalizerConfig,
-}
-
-/// Normalization configuration.
-/// Kept simple to allow compiler optimizations.
-#[derive(Clone, Copy)]
+/// Configuration flags controlling normalization behavior.
+#[derive(Clone, Debug)]
 pub struct NormalizerConfig {
     pub lowercase_scheme: bool,
     pub remove_www: bool,
@@ -32,13 +21,23 @@ pub struct NormalizerConfig {
     pub lowercase_hostname: bool,
 }
 
+/// URL normalizer.
+///
+/// Responsible for converting URLs into a canonical form
+/// before hashing or deduplication.
+pub struct UrlNormalizer {
+    tracking_params: HashSet<String>,
+    domain_rules: HashMap<String, DomainRule>,
+    config: NormalizerConfig,
+}
+
 impl UrlNormalizer {
     /// Create a new URL normalizer with default settings.
     pub fn new() -> Self {
-        let mut tracking_params = HashSet::with_capacity(DEFAULT_TRACKING_PARAMS.len());
-        for p in DEFAULT_TRACKING_PARAMS {
-            tracking_params.insert((*p).to_string());
-        }
+        let tracking_params = DEFAULT_TRACKING_PARAMS
+            .iter()
+            .map(|p| (*p).to_string())
+            .collect();
 
         Self {
             tracking_params,
@@ -54,85 +53,62 @@ impl UrlNormalizer {
         }
     }
 
-    /// Normalize a URL into its canonical form.
-    ///
-    /// This function is performance-sensitive and structured to:
-    /// - Avoid unnecessary allocations
-    /// - Skip expensive work for simple URLs
-    /// - Minimize query sorting overhead
+    /// Normalize a URL into its canonical representation.
     pub fn normalize(&self, input: &str) -> Result<String, url::ParseError> {
         let url = Url::parse(input)?;
 
-        // ---- Domain-specific override (fast exit) ----
+        // Domain-specific overrides
         if let Some(rule) = self.domain_rules.get(url.domain().unwrap_or("")) {
             return Ok(rule(&url));
         }
 
-        // ---- Build output incrementally into a single buffer ----
         let mut out = String::with_capacity(input.len());
 
-        // ---- Scheme ----
-        if self.config.lowercase_scheme {
-            out.push_str(url.scheme());
-        } else {
-            out.push_str(url.scheme());
-        }
+        // Scheme
+        out.push_str(url.scheme());
         out.push_str("://");
 
-        // ---- Host ----
+        // Host
         if let Some(host) = url.host_str() {
-            let host = if self.config.lowercase_hostname {
-                host.to_ascii_lowercase()
-            } else {
-                host.to_string()
-            };
-
-            if self.config.remove_www && host.starts_with("www.") {
-                out.push_str(&host[4..]);
-            } else {
-                out.push_str(&host);
+            let mut host = host.to_string();
+            if self.config.lowercase_hostname {
+                host.make_ascii_lowercase();
             }
+            if self.config.remove_www {
+                host = host.strip_prefix("www.").unwrap_or(&host).to_string();
+            }
+            out.push_str(&host);
         }
 
-        // ---- Port ----
-        if let Some(port) = url.port() {
-            let is_default = matches!(
-                (url.scheme(), port),
-                ("http", 80) | ("https", 443)
-            );
-
-            if !(self.config.remove_default_port && is_default) {
-                out.push(':');
-                out.push_str(&port.to_string());
-            }
+        // Port
+        if !self.config.remove_default_port
+            && let Some(port) = url.port()
+        {
+            out.push(':');
+            out.push_str(&port.to_string());
         }
 
-        // ---- Path ----
-        let path = url.path();
-        if path != "/" {
-            // Avoid allocations for trivial paths
-            out.push_str(path.trim_end_matches('/'));
-        } else {
+        // Path
+        let path = url.path().trim_end_matches('/');
+        if path.is_empty() {
             out.push('/');
+        } else {
+            out.push_str(path);
         }
 
-         // ---- Query ----
-        if let Some(_) = url.query() {
-            // Store owned strings to satisfy Rust lifetimes
-            let mut params: Vec<(String, String)> = Vec::with_capacity(4);
+        // Query parameters
+        if url.query().is_some() {
+            let mut params: Vec<(String, String)> = url
+                .query_pairs()
+                .filter(|(k, _)| !self.tracking_params.contains(k.as_ref()))
+                .map(|(k, v)| (k.into_owned(), v.into_owned()))
+                .collect();
 
-            for (k, v) in url.query_pairs() {
-                if !self.tracking_params.contains(k.as_ref()) {
-                    params.push((k.into_owned(), v.into_owned()));
-                }
+            if self.config.sort_query_params {
+                params.sort_unstable();
             }
 
-            // Fast path: 0 or 1 parameter → no sort needed
             if !params.is_empty() {
-                if self.config.sort_query_params && params.len() > 1 {
-                    params.sort_unstable_by(|a, b| a.0.cmp(&b.0));
-                }
-
                 out.push('?');
                 for (i, (k, v)) in params.iter().enumerate() {
                     if i > 0 {
@@ -145,13 +121,11 @@ impl UrlNormalizer {
             }
         }
 
-        // ---- Fragment ----
         // Fragment intentionally dropped if configured
-
         Ok(out)
     }
 
-    /// Add a tracking parameter to be removed during normalization.
+    /// Add a tracking query parameter to be removed during normalization.
     pub fn add_tracking_param(&mut self, param: &str) {
         self.tracking_params.insert(param.to_string());
     }
@@ -165,7 +139,13 @@ impl UrlNormalizer {
     }
 }
 
-/// Default tracking parameters removed from URLs.
+impl Default for UrlNormalizer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Default tracking parameters removed during normalization.
 const DEFAULT_TRACKING_PARAMS: &[&str] = &[
     "utm_source",
     "utm_medium",

@@ -1,8 +1,6 @@
 //! Criterion benchmarks for Bloom filter performance.
 
-use criterion::{
-    black_box, criterion_group, criterion_main, Criterion, Throughput,
-};
+use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
 use kaka::bloom::BloomFilter;
 
 /// Benchmark Bloom filter insertion throughput.
@@ -31,15 +29,9 @@ fn bloom_contains_benchmark(c: &mut Criterion) {
     }
 
     c.bench_function("contains_check", |b| {
-        b.iter(|| {
-            bloom.contains(black_box("https://example.com/page5000"))
-        });
+        b.iter(|| bloom.contains(black_box("https://example.com/page5000")));
     });
 }
 
-criterion_group!(
-    benches,
-    bloom_insert_benchmark,
-    bloom_contains_benchmark
-);
+criterion_group!(benches, bloom_insert_benchmark, bloom_contains_benchmark);
 criterion_main!(benches);
